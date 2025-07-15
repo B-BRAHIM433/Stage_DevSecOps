@@ -54,17 +54,8 @@ security-event-tracker/
 ├── .github/
 │ └── workflows/
 │ └── ci.yml # Pipeline GitHub Actions
-├── Dockerfile # (optionnel)
+├── Dockerfile 
 └── README.md
 
 
----
 
-## ⚙️ Fonctionnement
-
-### 1. 📥 Scan de vulnérabilités
-
-L’outil **Bandit** est utilisé pour détecter les vulnérabilités dans le code Python :
-
-```bash
-bandit -r app/ -f json -o reports/report.json
