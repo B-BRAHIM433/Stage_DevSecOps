@@ -39,23 +39,20 @@ Il permet de :
 
 ## 📦 Architecture du projet
 
-security-event-tracker/
-├── app/
-│ └── main.py # Application simulée
-├── scanner/
-│ ├── scan_logs.py # Scanner personnalisé
-│ └── alerts.py # Générateur d'alertes
-├── reports/
-│ └── report.json # Résultats des scans
-├── dashboard/
-│ ├── app.py # Flask App
-│ └── templates/
-│ └── index.html # UI du dashboard
+security-automation/
 ├── .github/
-│ └── workflows/
-│ └── ci.yml # Pipeline GitHub Actions
-├── Dockerfile 
+│   └── workflows/
+│       └── scan.yml
+├── scanner-api/
+│   ├── routes/
+│   │   └── uploadResult.js
+│   ├── results/            # dossier local où les rapports sont enregistrés
+│   └── package.json
+├── dashboard/
+│   ├── public/
+│   │   └── index.html
+│   ├── src/
+│   │   ├── App.js
+│   │   └── index.js
+│   └── package.json
 └── README.md
-
-
-
