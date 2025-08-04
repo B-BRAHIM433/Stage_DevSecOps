@@ -28,9 +28,9 @@ Il permet de :
 | Domaine             | Outil utilisé                                  |
 |----------------     |------------------------------------------------|
 | CI/CD               | GitHub Actions                                 |
-| Sécurité code       | [Bandit](https://github.com/PyCQA/bandit)      |
+| Sécurité code       | [Snyl](https://github.com/)      |
 | Sécurité conteneur  | [Trivy](https://github.com/aquasecurity/trivy) |
-| Web app (dashboard) | Flask + HTML/CSS                               |
+| Web app (dashboard) | Flask + ReactJS                               |
 | Alertes             | Slack Webhook / Email (SMTP)                   |
 | Base de logs        | JSON ou SQLite                                 |
 | OS                  | Ubuntu (VM locale)                             |
