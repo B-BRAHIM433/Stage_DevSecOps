@@ -28,7 +28,7 @@ Il permet de :
 | Domaine             | Outil utilisé                                  |
 |----------------     |------------------------------------------------|
 | CI/CD               | GitHub Actions                                 |
-| Sécurité code       | [Snyl](https://github.com/)      |
+| Sécurité code       | [Snyk](https://snyk.io/)     |
 | Sécurité conteneur  | [Trivy](https://github.com/aquasecurity/trivy) |
 | Web app (dashboard) | Flask + ReactJS                               |
 | Alertes             | Slack Webhook / Email (SMTP)                   |
