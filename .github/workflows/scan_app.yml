@@ -26,6 +26,9 @@ jobs:
       - if: ${{ inputs.docker_image != '' }}
         run: snyk container test ${{ inputs.docker_image }} --json > snyk-docker.json
       - run: |
+          cd backend
+          npm install
+          nohup npm start &
           curl -X POST http://localhost:3001/upload/code \
             -H "Content-Type: application/json" \
             --data-binary @snyk-code.json
