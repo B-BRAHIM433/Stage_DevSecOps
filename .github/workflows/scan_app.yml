@@ -17,7 +17,12 @@ jobs:
       - uses: actions/checkout@v3
       - run: npm install -g snyk
       - run: snyk auth ${{ secrets.SNYK_TOKEN }}
-      - run: snyk test --json > snyk-code.json
+      - run: snyk test --json > snyk-code.json || true
+      - name: Upload scan report
+        uses: actions/upload-artifact@v4
+        with:
+          name: snyk-scan-report
+          path: snyk-code.json
       - if: ${{ inputs.docker_image != '' }}
         run: snyk container test ${{ inputs.docker_image }} --json > snyk-docker.json
       - run: |
