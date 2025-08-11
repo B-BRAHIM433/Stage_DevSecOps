@@ -1,39 +1,233 @@
-name: Reusable Security Scan
+# .github/workflows/scan.yml
+name: Security Scan Platform
 
 on:
-  workflow_call:
+  workflow_dispatch:
     inputs:
-      docker_image:
-        required: false
-        type: string
-    secrets:
-      SNYK_TOKEN:
+      target_repo:
+        description: 'URL du repository à scanner'
         required: true
+        type: string
+      scan_id:
+        description: 'ID unique du scan'
+        required: true
+        type: string
 
 jobs:
-  scan:
+  security-scan:
     runs-on: ubuntu-latest
+    
     steps:
-      - uses: actions/checkout@v3
-      - run: npm install -g snyk
-      - run: snyk auth ${{ secrets.SNYK_TOKEN }}
-      - run: snyk test --json > snyk-code.json || true
-      - name: Upload scan report
-        uses: actions/upload-artifact@v4
-        with:
-          name: snyk-scan-report
-          path: snyk-code.json
-      - if: ${{ inputs.docker_image != '' }}
-        run: snyk container test ${{ inputs.docker_image }} --json > snyk-docker.json
-      - run: |
-          cd backend
-          npm install
-          nohup npm start &
-          curl -X POST http://localhost:3001/upload/code \
-            -H "Content-Type: application/json" \
-            --data-binary @snyk-code.json
-      - if: ${{ inputs.docker_image != '' }}
+      # 1. Notifier le début du scan
+      - name: Notify scan start
         run: |
-          curl -X POST http://localhost:3001/upload/docker \
+          curl -X POST ${{ secrets.PLATFORM_API_URL }}/api/scan/results \
             -H "Content-Type: application/json" \
-            --data-binary @snyk-docker.json
+            -d '{
+              "scan_id": "${{ github.event.inputs.scan_id }}",
+              "status": "running",
+              "message": "Scan démarré"
+            }'
+      
+      # 2. Cloner le repository cible
+      - name: Clone target repository
+        run: |
+          git clone ${{ github.event.inputs.target_repo }} target-repo
+          cd target-repo
+          echo "REPO_PATH=$(pwd)" >> $GITHUB_ENV
+      
+      # 3. Identifier le type de projet
+      - name: Detect project type
+        id: detect
+        run: |
+          cd $REPO_PATH
+          HAS_PACKAGE_JSON=false
+          HAS_DOCKERFILE=false
+          HAS_REQUIREMENTS=false
+          HAS_COMPOSER=false
+          
+          if [ -f "package.json" ]; then
+            HAS_PACKAGE_JSON=true
+            echo "📦 Projet Node.js détecté"
+          fi
+          
+          if [ -f "Dockerfile" ]; then
+            HAS_DOCKERFILE=true
+            echo "🐳 Dockerfile détecté"
+          fi
+          
+          if [ -f "requirements.txt" ] || [ -f "Pipfile" ]; then
+            HAS_REQUIREMENTS=true
+            echo "🐍 Projet Python détecté"
+          fi
+          
+          if [ -f "composer.json" ]; then
+            HAS_COMPOSER=true
+            echo "🐘 Projet PHP détecté"
+          fi
+          
+          echo "has_package_json=$HAS_PACKAGE_JSON" >> $GITHUB_OUTPUT
+          echo "has_dockerfile=$HAS_DOCKERFILE" >> $GITHUB_OUTPUT
+          echo "has_requirements=$HAS_REQUIREMENTS" >> $GITHUB_OUTPUT
+          echo "has_composer=$HAS_COMPOSER" >> $GITHUB_OUTPUT
+
+      # 4. Installer Snyk
+      - name: Install Snyk
+        run: npm install -g snyk
+
+      # 5. Authentification Snyk
+      - name: Authenticate Snyk
+        run: snyk auth ${{ secrets.SNYK_TOKEN }}
+
+      # 6. Scan des dépendances Node.js
+      - name: Snyk Code Scan - Node.js
+        if: steps.detect.outputs.has_package_json == 'true'
+        run: |
+          cd $REPO_PATH
+          npm install || echo "Installation failed, continuing scan..."
+          snyk test --json > ../snyk-nodejs.json || echo "Scan completed with vulnerabilities"
+          snyk code test --json > ../snyk-code-nodejs.json || echo "Code scan completed"
+
+      # 7. Scan des dépendances Python
+      - name: Snyk Code Scan - Python
+        if: steps.detect.outputs.has_requirements == 'true'
+        run: |
+          cd $REPO_PATH
+          pip install -r requirements.txt || echo "Installation failed, continuing scan..."
+          snyk test --json > ../snyk-python.json || echo "Scan completed with vulnerabilities"
+          snyk code test --json > ../snyk-code-python.json || echo "Code scan completed"
+
+      # 8. Scan Docker si présent
+      - name: Snyk Container Scan
+        if: steps.detect.outputs.has_dockerfile == 'true'
+        run: |
+          cd $REPO_PATH
+          # Construire l'image Docker
+          IMAGE_NAME="scan-target:${{ github.event.inputs.scan_id }}"
+          docker build -t $IMAGE_NAME . || echo "Docker build failed"
+          
+          # Scanner l'image
+          snyk container test $IMAGE_NAME --json > ../snyk-docker.json || echo "Container scan completed"
+
+      # 9. Scan général du code (tous types)
+      - name: Snyk Code Scan - General
+        run: |
+          cd $REPO_PATH
+          snyk code test --json > ../snyk-code-general.json || echo "General code scan completed"
+
+      # 10. Analyser et combiner les résultats
+      - name: Process scan results
+        id: results
+        run: |
+          # Créer le script de traitement des résultats
+          cat > process_results.py << 'EOF'
+          import json
+          import os
+          import glob
+          
+          def count_vulnerabilities(data):
+              if not data or 'vulnerabilities' not in data:
+                  return {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
+              
+              counts = {'critical': 0, 'high': 0, 'medium': 0, 'low': 0}
+              
+              for vuln in data.get('vulnerabilities', []):
+                  severity = vuln.get('severity', 'low').lower()
+                  if severity in counts:
+                      counts[severity] += 1
+              
+              return counts
+          
+          # Traiter tous les fichiers JSON Snyk
+          all_results = {
+              'critical': 0,
+              'high': 0, 
+              'medium': 0,
+              'low': 0,
+              'scans': {}
+          }
+          
+          # Lire tous les fichiers de résultats
+          for file_path in glob.glob('snyk-*.json'):
+              try:
+                  with open(file_path, 'r') as f:
+                      data = json.load(f)
+                  
+                  counts = count_vulnerabilities(data)
+                  scan_type = file_path.replace('snyk-', '').replace('.json', '')
+                  
+                  all_results['scans'][scan_type] = {
+                      'counts': counts,
+                      'file': file_path
+                  }
+                  
+                  # Additionner les totaux
+                  for severity in ['critical', 'high', 'medium', 'low']:
+                      all_results[severity] += counts[severity]
+                      
+              except Exception as e:
+                  print(f"Erreur lors du traitement de {file_path}: {e}")
+          
+          # Sauvegarder les résultats combinés
+          with open('combined_results.json', 'w') as f:
+              json.dump(all_results, f, indent=2)
+          
+          print(f"Résultats: {all_results['critical']} critiques, {all_results['high']} élevées, {all_results['medium']} moyennes")
+          
+          # Créer les variables d'environnement
+          with open(os.environ['GITHUB_OUTPUT'], 'a') as f:
+              f.write(f"critical={all_results['critical']}\n")
+              f.write(f"high={all_results['high']}\n")
+              f.write(f"medium={all_results['medium']}\n")
+              f.write(f"low={all_results['low']}\n")
+              f.write(f"total={sum(all_results[k] for k in ['critical', 'high', 'medium', 'low'])}\n")
+          EOF
+          
+          # Exécuter le script
+          python process_results.py
+
+      # 11. Envoyer les résultats à la plateforme
+      - name: Send results to platform
+        run: |
+          # Lire les résultats combinés
+          RESULTS=$(cat combined_results.json)
+          
+          # Préparer le payload avec les résultats détaillés
+          cat > payload.json << EOF
+          {
+            "scan_id": "${{ github.event.inputs.scan_id }}",
+            "status": "completed",
+            "results": {
+              "critical": ${{ steps.results.outputs.critical }},
+              "high": ${{ steps.results.outputs.high }},
+              "medium": ${{ steps.results.outputs.medium }},
+              "low": ${{ steps.results.outputs.low }},
+              "total": ${{ steps.results.outputs.total }},
+              "rawData": $RESULTS
+            }
+          }
+          EOF
+          
+          # Envoyer à la plateforme
+          curl -X POST ${{ secrets.PLATFORM_API_URL }}/api/scan/results \
+            -H "Content-Type: application/json" \
+            --data-binary @payload.json
+
+      # 12. Nettoyer les fichiers temporaires
+      - name: Cleanup
+        if: always()
+        run: |
+          rm -rf target-repo
+          rm -f snyk-*.json combined_results.json payload.json process_results.py
+
+      # 13. Gérer les erreurs
+      - name: Handle scan failure
+        if: failure()
+        run: |
+          curl -X POST ${{ secrets.PLATFORM_API_URL }}/api/scan/results \
+            -H "Content-Type: application/json" \
+            -d '{
+              "scan_id": "${{ github.event.inputs.scan_id }}",
+              "status": "failed",
+              "error": "Erreur lors de l exécution du scan"
+            }'
