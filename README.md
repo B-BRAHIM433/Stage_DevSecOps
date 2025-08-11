@@ -37,6 +37,33 @@ Il permet de :
 
 ---
 
+[ User's Browser ]
+        │ 1. Enter GitHub Repo URL
+        ▼
+[ Platform Frontend ]
+        │ Sends repo URL to backend
+        ▼
+[ Platform Backend ]
+   2. Generates unique scan_id
+   3. Calls GitHub Actions API to trigger workflow
+        │
+        ▼
+[ GitHub Actions Runner ]
+   4. Runs scan.yml workflow:
+      - Clone repo
+      - Detect tech stack
+      - Run Snyk scans
+      - Send progress & results back
+        │
+        ▼
+[ Platform API Endpoint /api/scan/results ]
+   5. Receives status updates & JSON results
+   6. Stores in database
+        │
+        ▼
+[ Dashboard ]
+   7. Shows real-time progress & results to user
+
 ## 📦 Architecture du projet
 
 security-automation/
